@@ -17,7 +17,7 @@ class Conv(BaseLayer):
         self.num_kernels = num_kernels
         self.num_channels = convolution_shape[0]
 
-        '''return the gradient with respect to theweights and bias, after they have been calculated in the backward-pass.'''
+        '''return the gradient with respect to the weights and bias, after they have been calculated in the backward-pass.'''
         self.weights = np.random.uniform(0.0, 1.0, (num_kernels, *convolution_shape))
         self.bias = np.random.uniform(0.0, 1.0, num_kernels)
 
@@ -29,8 +29,8 @@ class Conv(BaseLayer):
 
     def forward(self, input_tensor):
         '''returns a tensor that serves as the input tensor for the next layer.'''
-        self.input_tensor = input_tensor
-        batch_size = self.input_tensor.shape[0]
+        self.input_tensor = input_tensor    #Input size is X x y x S
+        batch_size = self.input_tensor.shape[0]        # X
         # Creating output shape
         output_tensor = np.empty((batch_size, self.num_kernels, *input_tensor.shape[2:]))  
 
@@ -38,14 +38,19 @@ class Conv(BaseLayer):
         '''The input layout for 1D is defined in b, c, y order, for 2D in b, c, y, x order. Here, b stands for the batch, c represents the channels and x, y represent the spatial dimensions.'''
         for b, sample in enumerate(input_tensor):
             for k, kernel in enumerate(self.weights):
-                corr = correlate(sample, kernel, mode='same')[self.num_channels // 2]
+                corr = correlate(sample, kernel, mode='same')[self.num_channels // 2] #The output is the same size as sample, centered with respect to the ‘full’ output.
                 output_tensor[b][k] = corr + self.bias[k]
 
         # Case for 1-D, the last dimension avoided during striding.
-
+        #striding helps incoporating pooling mechanism and the dimensionality reduction mechanism into the convolution
+        """
+        It’s like skipping one step at each point. 
+        So, with the stride s, we describe an offset and then we intrinsically produce an activation map that has a lower dimension that is dependent on this stride.
+        we reduce the size of the output by a factor of s because skipping so many steps and mathematically this is simply convolution and subsampling at the same time.
+        """
         if len(self.convolution_shape) == 2:  # 1-D tensor
             strided_output = output_tensor[::, ::, ::self.stride_shape[0]]
-        else:
+        else:   #2-D tensor
             strided_output = output_tensor[::, ::, ::self.stride_shape[0], ::self.stride_shape[1]]
 
         return strided_output
@@ -69,25 +74,25 @@ class Conv(BaseLayer):
 
         # Flipping Kernels.
 
-        rearranged_weights = np.swapaxes(self.weights, 0, 1)
-        rearranged_weights = np.flip(rearranged_weights, axis=1)
+        rearranged_weights = np.swapaxes(self.weights, 0, 1)        #Interchange two axes of an array.
+        rearranged_weights = np.flip(rearranged_weights, axis=1)       #Reverse the order of elements in an array along columns.
 
         # Calculating the Gradient wrt the Input.
 
         output_tensor = np.zeros_like(self.input_tensor)
         for b, error in enumerate(upsampled_error):
             for c, channel in enumerate(rearranged_weights):
-                conv = convolve(error, channel, mode='same')
+                conv = convolve(error, channel, mode='same')        #Fourier transform to actually perform the convolution
                 output_tensor[b][c] = conv[self.num_kernels // 2]
 
         # Padding the input for calculating gradient wrt weights.
-
+        #Padding solves the problem of missing observations at the boundary
         if len(self.convolution_shape) == 2:
             padded_input = self.input_tensor
         else:
             padded_input = np.pad(self.input_tensor, (
                 (0, 0), (0, 0), ((self.convolution_shape[1] - 1) // 2, self.convolution_shape[1] // 2),
-                ((self.convolution_shape[2] - 1) // 2, self.convolution_shape[2] // 2)), 'constant')
+                ((self.convolution_shape[2] - 1) // 2, self.convolution_shape[2] // 2)), 'constant')    #Pads input_tensor with a constant value
 
         # Calculating gradient wrt weights and bias.
 
